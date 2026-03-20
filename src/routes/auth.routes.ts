@@ -7,7 +7,7 @@ const router = Router();
 
 router.post('/signup', authRateLimiter, signup);
 router.post('/login', authRateLimiter, login);
-router.post('/refresh', refresh);
+router.post('/refresh', authRateLimiter, refresh);
 router.post('/logout', authenticate, logout);
 
 export default router;
