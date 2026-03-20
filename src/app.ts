@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import connectDB from './db/connect';
 import authRoutes from './routes/auth.routes';
 import walletRoutes from './routes/wallet.routes';
+import transactionRoutes from './routes/transaction.routes';
 
 dotenv.config();
 
@@ -19,6 +20,7 @@ app.use(express.json({ limit: '10kb' }));
 
 app.use('/api/auth', authRoutes);
 app.use('/api/wallet', walletRoutes);
+app.use('/api/transactions', transactionRoutes);
 
 connectDB().then(() => {
   app.listen(PORT, () => {
