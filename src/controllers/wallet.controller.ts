@@ -6,88 +6,100 @@ import { AuthRequest } from '../middleware/auth';
 
 // POST /api/wallet/deposit
 export const deposit = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { amount, description } = req.body;
+
+  if (!amount || typeof amount !== 'number' || amount <= 0) {
+    res.status(400).json({ message: 'Amount must be a positive number' });
+    return;
+  }
+  if (!description || typeof description !== 'string' || !description.trim()) {
+    res.status(400).json({ message: 'Description is required' });
+    return;
+  }
+
+  const session = await mongoose.startSession();
+
   try {
-    const { amount, description } = req.body;
+    let balanceAfter: number;
+    let transaction: any;
 
-    if (!amount || typeof amount !== 'number' || amount <= 0) {
-      res.status(400).json({ message: 'Amount must be a positive number' });
-      return;
-    }
-    if (!description || typeof description !== 'string' || !description.trim()) {
-      res.status(400).json({ message: 'Description is required' });
-      return;
-    }
+    await session.withTransaction(async () => {
+      const wallet = await WalletModel.findOne({ userId: req.userId }).session(session);
+      if (!wallet) throw new Error('WALLET_NOT_FOUND');
 
-    const wallet = await WalletModel.findOne({ userId: req.userId });
-    if (!wallet) {
-      res.status(404).json({ message: 'Wallet not found' });
-      return;
-    }
+      const balanceBefore = wallet.balance;
+      balanceAfter = balanceBefore + amount;
 
-    const balanceBefore = wallet.balance;
-    const balanceAfter = balanceBefore + amount;
+      wallet.balance = balanceAfter;
+      await wallet.save({ session });
 
-    wallet.balance = balanceAfter;
-    await wallet.save();
-
-    const transaction = await TransactionModel.create({
-      walletId: wallet._id,
-      type: 'deposit',
-      amount,
-      balanceBefore,
-      balanceAfter,
-      description: description.trim(),
+      [transaction] = await TransactionModel.create(
+        [{ walletId: wallet._id, type: 'deposit', amount, balanceBefore, balanceAfter, description: description.trim() }],
+        { session }
+      );
     });
 
-    res.status(200).json({ message: 'Deposit successful', balance: balanceAfter, transaction });
-  } catch {
-    res.status(500).json({ message: 'Deposit failed' });
+    res.status(200).json({ message: 'Deposit successful', balance: balanceAfter!, transaction });
+  } catch (err) {
+    const message = (err as Error).message;
+    if (message === 'WALLET_NOT_FOUND') {
+      res.status(404).json({ message: 'Wallet not found' });
+    } else {
+      res.status(500).json({ message: 'Deposit failed' });
+    }
+  } finally {
+    session.endSession();
   }
 };
 
 // POST /api/wallet/withdraw
 export const withdraw = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { amount, description } = req.body;
+
+  if (!amount || typeof amount !== 'number' || amount <= 0) {
+    res.status(400).json({ message: 'Amount must be a positive number' });
+    return;
+  }
+  if (!description || typeof description !== 'string' || !description.trim()) {
+    res.status(400).json({ message: 'Description is required' });
+    return;
+  }
+
+  const session = await mongoose.startSession();
+
   try {
-    const { amount, description } = req.body;
+    let balanceAfter: number;
+    let transaction: any;
 
-    if (!amount || typeof amount !== 'number' || amount <= 0) {
-      res.status(400).json({ message: 'Amount must be a positive number' });
-      return;
-    }
-    if (!description || typeof description !== 'string' || !description.trim()) {
-      res.status(400).json({ message: 'Description is required' });
-      return;
-    }
+    await session.withTransaction(async () => {
+      const wallet = await WalletModel.findOne({ userId: req.userId }).session(session);
+      if (!wallet) throw new Error('WALLET_NOT_FOUND');
+      if (wallet.balance < amount) throw new Error('INSUFFICIENT_BALANCE');
 
-    const wallet = await WalletModel.findOne({ userId: req.userId });
-    if (!wallet) {
-      res.status(404).json({ message: 'Wallet not found' });
-      return;
-    }
+      const balanceBefore = wallet.balance;
+      balanceAfter = balanceBefore - amount;
 
-    if (wallet.balance < amount) {
-      res.status(400).json({ message: 'Insufficient balance' });
-      return;
-    }
+      wallet.balance = balanceAfter;
+      await wallet.save({ session });
 
-    const balanceBefore = wallet.balance;
-    const balanceAfter = balanceBefore - amount;
-
-    wallet.balance = balanceAfter;
-    await wallet.save();
-
-    const transaction = await TransactionModel.create({
-      walletId: wallet._id,
-      type: 'withdraw',
-      amount,
-      balanceBefore,
-      balanceAfter,
-      description: description.trim(),
+      [transaction] = await TransactionModel.create(
+        [{ walletId: wallet._id, type: 'withdraw', amount, balanceBefore, balanceAfter, description: description.trim() }],
+        { session }
+      );
     });
 
-    res.status(200).json({ message: 'Withdrawal successful', balance: balanceAfter, transaction });
-  } catch {
-    res.status(500).json({ message: 'Withdrawal failed' });
+    res.status(200).json({ message: 'Withdrawal successful', balance: balanceAfter!, transaction });
+  } catch (err) {
+    const message = (err as Error).message;
+    if (message === 'WALLET_NOT_FOUND') {
+      res.status(404).json({ message: 'Wallet not found' });
+    } else if (message === 'INSUFFICIENT_BALANCE') {
+      res.status(400).json({ message: 'Insufficient balance' });
+    } else {
+      res.status(500).json({ message: 'Withdrawal failed' });
+    }
+  } finally {
+    session.endSession();
   }
 };
 
