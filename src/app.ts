@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import connectDB from './db/connect';
 import authRoutes from './routes/auth.routes';
+import walletRoutes from './routes/wallet.routes';
 
 dotenv.config();
 
@@ -17,6 +18,7 @@ app.use(cors({
 app.use(express.json({ limit: '10kb' }));
 
 app.use('/api/auth', authRoutes);
+app.use('/api/wallet', walletRoutes);
 
 connectDB().then(() => {
   app.listen(PORT, () => {
