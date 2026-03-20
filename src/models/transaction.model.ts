@@ -23,7 +23,7 @@ const transactionSchema = new Schema<ITransaction>(
     amount: { type: Number, required: true, min: 0 },
     balanceBefore: { type: Number, required: true },
     balanceAfter: { type: Number, required: true },
-    description: { type: String, required: true, trim: true },
+    description: { type: String, required: true, trim: true, maxlength: 200 },
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );

@@ -4,16 +4,65 @@ import { WalletModel } from '../models/wallet.model';
 import { TransactionModel } from '../models/transaction.model';
 import { AuthRequest } from '../middleware/auth';
 
+const SUPPORTED_CURRENCIES = ['USD', 'EUR', 'GBP', 'NGN'] as const;
+
+// POST /api/wallet
+export const createWallet = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { currency } = req.body;
+
+  if (!currency || typeof currency !== 'string' || !SUPPORTED_CURRENCIES.includes(currency.toUpperCase() as any)) {
+    res.status(400).json({ message: `Currency is required. Supported: ${SUPPORTED_CURRENCIES.join(', ')}` });
+    return;
+  }
+
+  try {
+    const existing = await WalletModel.findOne({ userId: req.userId });
+    if (existing) {
+      res.status(409).json({ message: 'Wallet already exists', wallet: { walletId: existing.walletId, balance: existing.balance, currency: existing.currency } });
+      return;
+    }
+
+    const wallet = await WalletModel.create({ userId: req.userId, balance: 0, currency: currency.toUpperCase() });
+    res.status(201).json({ message: 'Wallet created', wallet: { walletId: wallet.walletId, balance: wallet.balance, currency: wallet.currency } });
+  } catch (err: any) {
+    if (err.code === 11000) {
+      res.status(409).json({ message: 'Wallet already exists' });
+    } else {
+      res.status(500).json({ message: 'Failed to create wallet' });
+    }
+  }
+};
+
+// GET /api/wallet
+export const getWallet = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const wallet = await WalletModel.findOne({ userId: req.userId });
+    if (!wallet) {
+      res.status(404).json({ message: 'Wallet not found. Create one at POST /api/wallet' });
+      return;
+    }
+    res.status(200).json({ walletId: wallet.walletId, balance: wallet.balance, currency: wallet.currency, createdAt: wallet.createdAt });
+  } catch {
+    res.status(500).json({ message: 'Failed to fetch wallet' });
+  }
+};
+
+const MAX_DESCRIPTION_LENGTH = 200;
+
 // POST /api/wallet/deposit
 export const deposit = async (req: AuthRequest, res: Response): Promise<void> => {
   const { amount, description } = req.body;
 
-  if (!amount || typeof amount !== 'number' || amount <= 0) {
+  if (!amount || typeof amount !== 'number' || !isFinite(amount) || amount <= 0) {
     res.status(400).json({ message: 'Amount must be a positive number' });
     return;
   }
   if (!description || typeof description !== 'string' || !description.trim()) {
     res.status(400).json({ message: 'Description is required' });
+    return;
+  }
+  if (description.length > MAX_DESCRIPTION_LENGTH) {
+    res.status(400).json({ message: `Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer` });
     return;
   }
 
@@ -35,7 +84,7 @@ export const deposit = async (req: AuthRequest, res: Response): Promise<void> =>
 
       [transaction] = await TransactionModel.create(
         [{ walletId: wallet._id, type: 'deposit', amount, balanceBefore, balanceAfter, description: description.trim() }],
-        { session }
+        { session, ordered: true }
       );
     });
 
@@ -56,12 +105,16 @@ export const deposit = async (req: AuthRequest, res: Response): Promise<void> =>
 export const withdraw = async (req: AuthRequest, res: Response): Promise<void> => {
   const { amount, description } = req.body;
 
-  if (!amount || typeof amount !== 'number' || amount <= 0) {
+  if (!amount || typeof amount !== 'number' || !isFinite(amount) || amount <= 0) {
     res.status(400).json({ message: 'Amount must be a positive number' });
     return;
   }
   if (!description || typeof description !== 'string' || !description.trim()) {
     res.status(400).json({ message: 'Description is required' });
+    return;
+  }
+  if (description.length > MAX_DESCRIPTION_LENGTH) {
+    res.status(400).json({ message: `Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer` });
     return;
   }
 
@@ -84,7 +137,7 @@ export const withdraw = async (req: AuthRequest, res: Response): Promise<void> =
 
       [transaction] = await TransactionModel.create(
         [{ walletId: wallet._id, type: 'withdraw', amount, balanceBefore, balanceAfter, description: description.trim() }],
-        { session }
+        { session, ordered: true }
       );
     });
 
@@ -111,12 +164,16 @@ export const transfer = async (req: AuthRequest, res: Response): Promise<void> =
     res.status(400).json({ message: 'Recipient wallet ID is required' });
     return;
   }
-  if (!amount || typeof amount !== 'number' || amount <= 0) {
+  if (!amount || typeof amount !== 'number' || !isFinite(amount) || amount <= 0) {
     res.status(400).json({ message: 'Amount must be a positive number' });
     return;
   }
   if (!description || typeof description !== 'string' || !description.trim()) {
     res.status(400).json({ message: 'Description is required' });
+    return;
+  }
+  if (description.length > MAX_DESCRIPTION_LENGTH) {
+    res.status(400).json({ message: `Description must be ${MAX_DESCRIPTION_LENGTH} characters or fewer` });
     return;
   }
 
@@ -128,11 +185,10 @@ export const transfer = async (req: AuthRequest, res: Response): Promise<void> =
     await session.withTransaction(async () => {
       const senderWallet = await WalletModel.findOne({ userId: req.userId }).session(session);
       if (!senderWallet) throw new Error('WALLET_NOT_FOUND');
+      if (senderWallet.walletId === toWalletId) throw new Error('SELF_TRANSFER');
 
       const receiverWallet = await WalletModel.findOne({ walletId: toWalletId }).session(session);
       if (!receiverWallet) throw new Error('RECIPIENT_NOT_FOUND');
-
-      if (senderWallet.walletId === toWalletId) throw new Error('SELF_TRANSFER');
       if (senderWallet.currency !== receiverWallet.currency) throw new Error('CURRENCY_MISMATCH');
       if (senderWallet.balance < amount) throw new Error('INSUFFICIENT_BALANCE');
 
@@ -166,7 +222,7 @@ export const transfer = async (req: AuthRequest, res: Response): Promise<void> =
             description: description.trim(),
           },
         ],
-        { session }
+        { session, ordered: true }
       );
     });
 
