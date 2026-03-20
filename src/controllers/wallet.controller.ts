@@ -93,49 +93,39 @@ export const withdraw = async (req: AuthRequest, res: Response): Promise<void> =
 
 // POST /api/wallet/transfer
 export const transfer = async (req: AuthRequest, res: Response): Promise<void> => {
+  const { toWalletId, amount, description } = req.body;
+
+  if (!toWalletId || typeof toWalletId !== 'string') {
+    res.status(400).json({ message: 'Recipient wallet ID is required' });
+    return;
+  }
+  if (!amount || typeof amount !== 'number' || amount <= 0) {
+    res.status(400).json({ message: 'Amount must be a positive number' });
+    return;
+  }
+  if (!description || typeof description !== 'string' || !description.trim()) {
+    res.status(400).json({ message: 'Description is required' });
+    return;
+  }
+
   const session = await mongoose.startSession();
 
   try {
-    const { toWalletId, amount, description } = req.body;
-
-    if (!toWalletId || typeof toWalletId !== 'string') {
-      res.status(400).json({ message: 'Recipient wallet ID is required' });
-      return;
-    }
-    if (!amount || typeof amount !== 'number' || amount <= 0) {
-      res.status(400).json({ message: 'Amount must be a positive number' });
-      return;
-    }
-    if (!description || typeof description !== 'string' || !description.trim()) {
-      res.status(400).json({ message: 'Description is required' });
-      return;
-    }
+    let senderBalanceAfter: number;
 
     await session.withTransaction(async () => {
       const senderWallet = await WalletModel.findOne({ userId: req.userId }).session(session);
-      if (!senderWallet) {
-        throw new Error('WALLET_NOT_FOUND');
-      }
+      if (!senderWallet) throw new Error('WALLET_NOT_FOUND');
 
       const receiverWallet = await WalletModel.findOne({ walletId: toWalletId }).session(session);
-      if (!receiverWallet) {
-        throw new Error('RECIPIENT_NOT_FOUND');
-      }
+      if (!receiverWallet) throw new Error('RECIPIENT_NOT_FOUND');
 
-      if (senderWallet.walletId === toWalletId) {
-        throw new Error('SELF_TRANSFER');
-      }
-
-      if (senderWallet.currency !== receiverWallet.currency) {
-        throw new Error('CURRENCY_MISMATCH');
-      }
-
-      if (senderWallet.balance < amount) {
-        throw new Error('INSUFFICIENT_BALANCE');
-      }
+      if (senderWallet.walletId === toWalletId) throw new Error('SELF_TRANSFER');
+      if (senderWallet.currency !== receiverWallet.currency) throw new Error('CURRENCY_MISMATCH');
+      if (senderWallet.balance < amount) throw new Error('INSUFFICIENT_BALANCE');
 
       const senderBalanceBefore = senderWallet.balance;
-      const senderBalanceAfter = senderBalanceBefore - amount;
+      senderBalanceAfter = senderBalanceBefore - amount;
       const receiverBalanceBefore = receiverWallet.balance;
       const receiverBalanceAfter = receiverBalanceBefore + amount;
 
@@ -168,8 +158,7 @@ export const transfer = async (req: AuthRequest, res: Response): Promise<void> =
       );
     });
 
-    const updatedWallet = await WalletModel.findOne({ userId: req.userId });
-    res.status(200).json({ message: 'Transfer successful', balance: updatedWallet?.balance });
+    res.status(200).json({ message: 'Transfer successful', balance: senderBalanceAfter! });
   } catch (err) {
     const message = (err as Error).message;
 
