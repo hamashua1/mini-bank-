@@ -21,6 +21,8 @@
   },
   "homepage": "https://github.com/hamashua1/mini-bank-#readme",
   "dependencies": {
+    "@simplewebauthn/server": "^13.3.0",
+    "@simplewebauthn/types": "^12.0.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
