@@ -16,6 +16,9 @@ const RP_ID = process.env.RP_ID || 'localhost';
 const ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:3001';
 const SALT_ROUNDS = 10;
 
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const pendingChallenges = new Map<string, { expiresAt: number }>();
+
 // POST /api/auth/webauthn/register/options  (authenticated)
 export const registerOptions = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -36,7 +39,7 @@ export const registerOptions = async (req: AuthRequest, res: Response): Promise<
         transports: pk.transports as AuthenticatorTransportFuture[],
       })),
       authenticatorSelection: {
-        residentKey: 'preferred',
+        residentKey: 'required',
         userVerification: 'preferred',
       },
     });
@@ -113,31 +116,13 @@ export const registerVerify = async (req: AuthRequest, res: Response): Promise<v
 // POST /api/auth/webauthn/login/options  (public)
 export const loginOptions = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email } = req.body;
-
-    if (!email || typeof email !== 'string') {
-      res.status(400).json({ message: 'Email is required' });
-      return;
-    }
-
-    const user = await UserModel.findOne({ email: email.toLowerCase().trim() });
-    if (!user || user.passkeys.length === 0) {
-      res.status(404).json({ message: 'No fingerprint registered for this account' });
-      return;
-    }
-
     const options = await generateAuthenticationOptions({
       rpID: RP_ID,
-      allowCredentials: user.passkeys.map(pk => ({
-        id: pk.credentialID,
-        transports: pk.transports as AuthenticatorTransportFuture[],
-      })),
+      allowCredentials: [],
       userVerification: 'preferred',
     });
 
-    user.currentChallenge = options.challenge;
-    user.currentChallengeExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
-    await user.save();
+    pendingChallenges.set(options.challenge, { expiresAt: Date.now() + CHALLENGE_TTL_MS });
 
     res.status(200).json(options);
   } catch {
@@ -148,30 +133,36 @@ export const loginOptions = async (req: Request, res: Response): Promise<void> =
 // POST /api/auth/webauthn/login/verify  (public)
 export const loginVerify = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { email, ...credential } = req.body;
+    const credential = req.body;
 
-    if (!email || typeof email !== 'string') {
-      res.status(400).json({ message: 'Email is required' });
+    if (!credential.id || typeof credential.id !== 'string') {
+      res.status(400).json({ message: 'Invalid credential' });
       return;
     }
 
-    const user = await UserModel.findOne({ email: email.toLowerCase().trim() });
-    if (!user || !user.currentChallenge) {
+    const user = await UserModel.findOne({ 'passkeys.credentialID': credential.id });
+    if (!user) {
+      res.status(400).json({ message: 'Fingerprint not recognised' });
+      return;
+    }
+
+    const passkey = user.passkeys.find(pk => pk.credentialID === credential.id)!;
+
+    const clientDataJSON = JSON.parse(
+      Buffer.from(credential.response.clientDataJSON, 'base64').toString()
+    );
+    const challenge = clientDataJSON.challenge as string;
+
+    const pending = pendingChallenges.get(challenge);
+    if (!pending) {
       res.status(400).json({ message: 'No challenge found. Request login options first.' });
       return;
     }
 
-    if (!user.currentChallengeExpiresAt || user.currentChallengeExpiresAt < new Date()) {
-      user.currentChallenge = null;
-      user.currentChallengeExpiresAt = null;
-      await user.save();
-      res.status(400).json({ message: 'Challenge expired. Request login options again.' });
-      return;
-    }
+    pendingChallenges.delete(challenge);
 
-    const passkey = user.passkeys.find(pk => pk.credentialID === credential.id);
-    if (!passkey) {
-      res.status(400).json({ message: 'Fingerprint not recognised for this account' });
+    if (pending.expiresAt < Date.now()) {
+      res.status(400).json({ message: 'Challenge expired. Request login options again.' });
       return;
     }
 
@@ -179,7 +170,7 @@ export const loginVerify = async (req: Request, res: Response): Promise<void> =>
     try {
       verification = await verifyAuthenticationResponse({
         response: credential,
-        expectedChallenge: user.currentChallenge,
+        expectedChallenge: challenge,
         expectedOrigin: ORIGIN,
         expectedRPID: RP_ID,
         credential: {
@@ -200,8 +191,6 @@ export const loginVerify = async (req: Request, res: Response): Promise<void> =>
     }
 
     passkey.counter = verification.authenticationInfo.newCounter;
-    user.currentChallenge = null;
-    user.currentChallengeExpiresAt = null;
 
     const accessToken = jwt.sign(
       { userId: user._id },
