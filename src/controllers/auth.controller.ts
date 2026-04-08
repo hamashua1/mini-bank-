@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { UserModel } from '../models/user.model';
 import { AuthRequest } from '../middleware/auth';
-import { createPapermapDashboard, generatePapermapToken } from '../services/papermap.service';
+import { getOrCreateTenantDashboard, generatePapermapToken } from '../services/papermap.service';
 
 const SALT_ROUNDS = 10;
 
@@ -31,6 +31,15 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
 
     const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
     const user = await UserModel.create({ email, passwordHash });
+
+    // Provision a Papermap dashboard tied to this user at account creation.
+    // TenantDashboard.tenantId is a foreign key to User._id — Papermap uses
+    // this relationship to scope AI queries to only this user's data.
+    try {
+      await getOrCreateTenantDashboard(user._id, user.email);
+    } catch {
+      // Non-fatal: account is created, dashboard provisioned on first login if this fails
+    }
 
     res.status(201).json({ message: 'Account created successfully', userId: user._id });
   } catch {
@@ -76,20 +85,15 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     );
 
     user.refreshToken = await bcrypt.hash(refreshToken, SALT_ROUNDS);
-
-    if (!user.papermapDashboardId) {
-      try {
-        user.papermapDashboardId = await createPapermapDashboard(user.email);
-      } catch {
-        // Non-fatal: proceed without Papermap dashboard if creation fails
-      }
-    }
-
     await user.save();
 
-    const papermapToken = user.papermapDashboardId
-      ? generatePapermapToken(user.papermapDashboardId)
-      : null;
+    let papermapToken: string | null = null;
+    try {
+      const dashboardId = await getOrCreateTenantDashboard(user._id, user.email);
+      papermapToken = generatePapermapToken(dashboardId, user._id.toString());
+    } catch {
+      // Non-fatal: login succeeds even if Papermap provisioning fails
+    }
 
     res.status(200).json({ message: 'Login successful', accessToken, refreshToken, papermapToken });
   } catch {
@@ -141,9 +145,13 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
     user.refreshToken = await bcrypt.hash(newRefreshToken, SALT_ROUNDS);
     await user.save();
 
-    const papermapToken = user.papermapDashboardId
-      ? generatePapermapToken(user.papermapDashboardId)
-      : null;
+    let papermapToken: string | null = null;
+    try {
+      const dashboardId = await getOrCreateTenantDashboard(user._id, user.email);
+      papermapToken = generatePapermapToken(dashboardId, user._id.toString());
+    } catch {
+      // Non-fatal
+    }
 
     res.status(200).json({ accessToken: newAccessToken, refreshToken: newRefreshToken, papermapToken });
   } catch {
@@ -168,17 +176,15 @@ export const getPapermapToken = async (req: AuthRequest, res: Response): Promise
       return;
     }
 
-    if (!user.papermapDashboardId) {
-      try {
-        user.papermapDashboardId = await createPapermapDashboard(user.email);
-        await user.save();
-      } catch {
-        res.status(503).json({ message: 'Could not provision Papermap dashboard' });
-        return;
-      }
+    let dashboardId: string;
+    try {
+      dashboardId = await getOrCreateTenantDashboard(user._id, user.email);
+    } catch {
+      res.status(503).json({ message: 'Could not provision Papermap dashboard' });
+      return;
     }
 
-    const papermapToken = generatePapermapToken(user.papermapDashboardId);
+    const papermapToken = generatePapermapToken(dashboardId, user._id.toString());
     res.status(200).json({ papermapToken });
   } catch {
     res.status(500).json({ message: 'Failed to generate Papermap token' });

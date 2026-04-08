@@ -10,7 +10,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { UserModel } from '../models/user.model';
 import { AuthRequest } from '../middleware/auth';
-import { createPapermapDashboard, generatePapermapToken } from '../services/papermap.service';
+import { getOrCreateTenantDashboard, generatePapermapToken } from '../services/papermap.service';
 
 const RP_NAME = 'Mini Bank';
 const RP_ID = process.env.RP_ID || 'localhost';
@@ -206,20 +206,15 @@ export const loginVerify = async (req: Request, res: Response): Promise<void> =>
     );
 
     user.refreshToken = await bcrypt.hash(refreshToken, SALT_ROUNDS);
-
-    if (!user.papermapDashboardId) {
-      try {
-        user.papermapDashboardId = await createPapermapDashboard(user.email);
-      } catch {
-        // Non-fatal: proceed without Papermap dashboard if creation fails
-      }
-    }
-
     await user.save();
 
-    const papermapToken = user.papermapDashboardId
-      ? generatePapermapToken(user.papermapDashboardId)
-      : null;
+    let papermapToken: string | null = null;
+    try {
+      const dashboardId = await getOrCreateTenantDashboard(user._id, user.email);
+      papermapToken = generatePapermapToken(dashboardId, user._id.toString());
+    } catch {
+      // Non-fatal
+    }
 
     res.status(200).json({ message: 'Login successful', accessToken, refreshToken, email: user.email, papermapToken });
   } catch {

@@ -18,12 +18,12 @@ export const createWallet = async (req: AuthRequest, res: Response): Promise<voi
   try {
     const existing = await WalletModel.findOne({ userId: req.userId });
     if (existing) {
-      res.status(409).json({ message: 'Wallet already exists', wallet: { walletId: existing.walletId, balance: existing.balance, currency: existing.currency } });
+      res.status(409).json({ message: 'Wallet already exists', wallet: { walletId: existing._id, balance: existing.balance, currency: existing.currency } });
       return;
     }
 
     const wallet = await WalletModel.create({ userId: req.userId, balance: 0, currency: currency.toUpperCase() });
-    res.status(201).json({ message: 'Wallet created', wallet: { walletId: wallet.walletId, balance: wallet.balance, currency: wallet.currency } });
+    res.status(201).json({ message: 'Wallet created', wallet: { walletId: wallet._id, balance: wallet.balance, currency: wallet.currency } });
   } catch (err: any) {
     if (err.code === 11000) {
       res.status(409).json({ message: 'Wallet already exists' });
@@ -41,7 +41,7 @@ export const getWallet = async (req: AuthRequest, res: Response): Promise<void> 
       res.status(404).json({ message: 'Wallet not found. Create one at POST /api/wallet' });
       return;
     }
-    res.status(200).json({ walletId: wallet.walletId, balance: wallet.balance, currency: wallet.currency, createdAt: wallet.createdAt });
+    res.status(200).json({ walletId: wallet._id, balance: wallet.balance, currency: wallet.currency, createdAt: wallet.createdAt });
   } catch {
     res.status(500).json({ message: 'Failed to fetch wallet' });
   }
@@ -185,9 +185,10 @@ export const transfer = async (req: AuthRequest, res: Response): Promise<void> =
     await session.withTransaction(async () => {
       const senderWallet = await WalletModel.findOne({ userId: req.userId }).session(session);
       if (!senderWallet) throw new Error('WALLET_NOT_FOUND');
-      if (senderWallet.walletId === toWalletId) throw new Error('SELF_TRANSFER');
+      if (senderWallet._id.toString() === toWalletId) throw new Error('SELF_TRANSFER');
 
-      const receiverWallet = await WalletModel.findOne({ walletId: toWalletId }).session(session);
+      if (!mongoose.Types.ObjectId.isValid(toWalletId)) throw new Error('RECIPIENT_NOT_FOUND');
+      const receiverWallet = await WalletModel.findById(toWalletId).session(session);
       if (!receiverWallet) throw new Error('RECIPIENT_NOT_FOUND');
       if (senderWallet.currency !== receiverWallet.currency) throw new Error('CURRENCY_MISMATCH');
       if (senderWallet.balance < amount) throw new Error('INSUFFICIENT_BALANCE');

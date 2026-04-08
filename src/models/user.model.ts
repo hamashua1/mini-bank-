@@ -14,7 +14,6 @@ export interface IUser extends Document {
   currentChallenge: string | null;
   currentChallengeExpiresAt: Date | null;
   passkeys: IPasskey[];
-  papermapDashboardId: string | null;
   createdAt: Date;
 }
 
@@ -36,7 +35,6 @@ const userSchema = new Schema<IUser>(
     currentChallenge: { type: String, default: null },
     currentChallengeExpiresAt: { type: Date, default: null },
     passkeys: { type: [passkeySchema], default: [] },
-    papermapDashboardId: { type: String, default: null },
   },
   { timestamps: { createdAt: true, updatedAt: false } }
 );
