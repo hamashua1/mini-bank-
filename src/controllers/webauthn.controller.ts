@@ -10,6 +10,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { UserModel } from '../models/user.model';
 import { AuthRequest } from '../middleware/auth';
+import { getOrCreateTenantDashboard, generatePapermapToken } from '../services/papermap.service';
 
 const RP_NAME = 'Mini Bank';
 const RP_ID = process.env.RP_ID || 'localhost';
@@ -207,7 +208,15 @@ export const loginVerify = async (req: Request, res: Response): Promise<void> =>
     user.refreshToken = await bcrypt.hash(refreshToken, SALT_ROUNDS);
     await user.save();
 
-    res.status(200).json({ message: 'Login successful', accessToken, refreshToken });
+    let papermapToken: string | null = null;
+    try {
+      const dashboardId = await getOrCreateTenantDashboard(user._id, user.email);
+      papermapToken = generatePapermapToken(dashboardId, user._id.toString());
+    } catch {
+      // Non-fatal
+    }
+
+    res.status(200).json({ message: 'Login successful', accessToken, refreshToken, email: user.email, papermapToken });
   } catch {
     res.status(500).json({ message: 'Fingerprint login failed' });
   }
