@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { UserModel } from '../models/user.model';
 import { AuthRequest } from '../middleware/auth';
+import { createPapermapDashboard, generatePapermapToken } from '../services/papermap.service';
 
 const SALT_ROUNDS = 10;
 
@@ -75,9 +76,22 @@ export const login = async (req: Request, res: Response): Promise<void> => {
     );
 
     user.refreshToken = await bcrypt.hash(refreshToken, SALT_ROUNDS);
+
+    if (!user.papermapDashboardId) {
+      try {
+        user.papermapDashboardId = await createPapermapDashboard(user.email);
+      } catch {
+        // Non-fatal: proceed without Papermap dashboard if creation fails
+      }
+    }
+
     await user.save();
 
-    res.status(200).json({ message: 'Login successful', accessToken, refreshToken });
+    const papermapToken = user.papermapDashboardId
+      ? generatePapermapToken(user.papermapDashboardId)
+      : null;
+
+    res.status(200).json({ message: 'Login successful', accessToken, refreshToken, papermapToken });
   } catch {
     res.status(500).json({ message: 'Login failed' });
   }
@@ -127,7 +141,11 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
     user.refreshToken = await bcrypt.hash(newRefreshToken, SALT_ROUNDS);
     await user.save();
 
-    res.status(200).json({ accessToken: newAccessToken, refreshToken: newRefreshToken });
+    const papermapToken = user.papermapDashboardId
+      ? generatePapermapToken(user.papermapDashboardId)
+      : null;
+
+    res.status(200).json({ accessToken: newAccessToken, refreshToken: newRefreshToken, papermapToken });
   } catch {
     res.status(500).json({ message: 'Token refresh failed' });
   }
@@ -139,5 +157,30 @@ export const logout = async (req: AuthRequest, res: Response): Promise<void> => 
     res.status(200).json({ message: 'Logged out successfully' });
   } catch {
     res.status(500).json({ message: 'Logout failed' });
+  }
+};
+
+export const getPapermapToken = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const user = await UserModel.findById(req.userId);
+    if (!user) {
+      res.status(404).json({ message: 'User not found' });
+      return;
+    }
+
+    if (!user.papermapDashboardId) {
+      try {
+        user.papermapDashboardId = await createPapermapDashboard(user.email);
+        await user.save();
+      } catch {
+        res.status(503).json({ message: 'Could not provision Papermap dashboard' });
+        return;
+      }
+    }
+
+    const papermapToken = generatePapermapToken(user.papermapDashboardId);
+    res.status(200).json({ papermapToken });
+  } catch {
+    res.status(500).json({ message: 'Failed to generate Papermap token' });
   }
 };

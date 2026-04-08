@@ -8,6 +8,14 @@ import transactionRoutes from './routes/transaction.routes';
 
 dotenv.config();
 
+const REQUIRED_ENV = ['JWT_SECRET', 'REFRESH_TOKEN_SECRET', 'MONGO_URI', 'PAPERMAP_API_KEY_ID', 'PAPERMAP_SECRET_KEY', 'PAPERMAP_WORKSPACE_ID'];
+for (const v of REQUIRED_ENV) {
+  if (!process.env[v]) {
+    console.error(`Missing required environment variable: ${v}`);
+    process.exit(1);
+  }
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 

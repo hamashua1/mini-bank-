@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { signup, login, refresh, logout } from '../controllers/auth.controller';
+import { signup, login, refresh, logout, getPapermapToken } from '../controllers/auth.controller';
 import { registerOptions, registerVerify, loginOptions, loginVerify } from '../controllers/webauthn.controller';
 import { authRateLimiter } from '../middleware/rateLimiter';
 import { authenticate } from '../middleware/auth';
@@ -10,6 +10,7 @@ router.post('/signup', authRateLimiter, signup);
 router.post('/login', authRateLimiter, login);
 router.post('/refresh', authRateLimiter, refresh);
 router.post('/logout', authenticate, logout);
+router.get('/papermap-token', authenticate, getPapermapToken);
 
 // WebAuthn (fingerprint)
 router.post('/webauthn/register/options', authenticate, registerOptions);
