@@ -1,0 +1,55 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: mini-bank-postgres
+    environment:
+      POSTGRES_USER: minibank
+      POSTGRES_PASSWORD: minibank_dev
+      POSTGRES_DB: minibank
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U minibank -d minibank']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mysql:
+    image: mysql:8.0
+    container_name: mini-bank-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_dev
+      MYSQL_USER: minibank
+      MYSQL_PASSWORD: minibank_dev
+      MYSQL_DATABASE: minibank
+    ports:
+      - '3306:3306'
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ['CMD', 'mysqladmin', 'ping', '-h', 'localhost', '-u', 'minibank', '-pminibank_dev']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: mini-bank-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@minibank.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - '5050:80'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - tools
+
+volumes:
+  postgres_data:
+  mysql_data:

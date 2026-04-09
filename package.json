@@ -6,7 +6,18 @@
   "scripts": {
     "dev": "nodemon --exec ts-node src/app.ts",
     "build": "tsc",
-    "start": "node dist/app.js"
+    "start": "node dist/app.js",
+    "tunnel": "ts-node src/tunnel.ts",
+    "tunnel:db": "ts-node src/tunnel-db.ts",
+    "db:migrate:postgres": "prisma migrate dev --schema=prisma/schema.postgres.prisma",
+    "db:migrate:mysql": "prisma migrate dev --schema=prisma/schema.mysql.prisma",
+    "db:studio:postgres": "prisma studio --schema=prisma/schema.postgres.prisma",
+    "db:studio:mysql": "prisma studio --schema=prisma/schema.mysql.prisma",
+    "db:generate": "prisma generate --schema=prisma/schema.postgres.prisma && prisma generate --schema=prisma/schema.mysql.prisma",
+    "docker:postgres": "docker compose up postgres -d",
+    "docker:mysql": "docker compose up mysql -d",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down"
   },
   "repository": {
     "type": "git",
@@ -21,6 +32,7 @@
   },
   "homepage": "https://github.com/hamashua1/mini-bank-#readme",
   "dependencies": {
+    "@prisma/client": "^5.22.0",
     "@simplewebauthn/server": "^13.3.0",
     "@simplewebauthn/types": "^12.0.0",
     "bcrypt": "^6.0.0",
@@ -30,6 +42,7 @@
     "express-rate-limit": "^8.3.1",
     "jsonwebtoken": "^9.0.3",
     "mongoose": "^9.3.1",
+    "ngrok": "^5.0.0-beta.2",
     "uuid": "^13.0.0"
   },
   "devDependencies": {
@@ -46,6 +59,7 @@
     "jest": "^30.3.0",
     "mongodb-memory-server": "^11.0.1",
     "nodemon": "^3.1.14",
+    "prisma": "^5.22.0",
     "supertest": "^7.2.2",
     "ts-jest": "^29.4.6",
     "ts-node": "^10.9.2",

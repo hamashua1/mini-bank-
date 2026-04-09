@@ -1,8 +1,7 @@
 import { Response } from 'express';
-import mongoose from 'mongoose';
-import { TransactionModel, TransactionType } from '../models/transaction.model';
-import { WalletModel } from '../models/wallet.model';
+import { WalletRepo, TransactionRepo } from '../repositories/registry';
 import { AuthRequest } from '../middleware/auth';
+import { TransactionType } from '../repositories/interfaces/wallet.repo.interface';
 
 const VALID_FILTERS = ['deposit', 'withdraw', 'transfer'] as const;
 type FilterType = typeof VALID_FILTERS[number];
@@ -24,7 +23,7 @@ export const getTransactions = async (req: AuthRequest, res: Response): Promise<
     const limitNum = Math.min(MAX_PAGE_LIMIT, Math.max(1, parseInt(limit as string) || DEFAULT_PAGE_LIMIT));
     const skip = (pageNum - 1) * limitNum;
 
-    const wallet = await WalletModel.findOne({ userId: req.userId });
+    const wallet = await WalletRepo.findByUserId(req.userId!);
     if (!wallet) {
       res.status(404).json({ message: 'Wallet not found' });
       return;
@@ -35,17 +34,12 @@ export const getTransactions = async (req: AuthRequest, res: Response): Promise<
     else if (filter === 'withdraw') typeFilter = ['withdraw'];
     else if (filter === 'transfer') typeFilter = ['transfer_in', 'transfer_out'];
 
-    const query: { walletId: mongoose.Types.ObjectId; type?: { $in: TransactionType[] } } = { walletId: wallet._id };
-    if (typeFilter) query.type = { $in: typeFilter };
-
-    const [transactions, total] = await Promise.all([
-      TransactionModel.find(query)
-        .select('type amount balanceBefore balanceAfter description createdAt')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(limitNum),
-      TransactionModel.countDocuments(query),
-    ]);
+    const { transactions, total } = await TransactionRepo.findByWalletId({
+      walletId: wallet.id,
+      typeFilter,
+      skip,
+      limit: limitNum,
+    });
 
     res.status(200).json({
       total,
@@ -64,22 +58,13 @@ export const getTransactionById = async (req: AuthRequest, res: Response): Promi
   try {
     const id = req.params.id as string;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      res.status(400).json({ message: 'Invalid transaction ID' });
-      return;
-    }
-
-    const wallet = await WalletModel.findOne({ userId: req.userId });
+    const wallet = await WalletRepo.findByUserId(req.userId!);
     if (!wallet) {
       res.status(404).json({ message: 'Wallet not found' });
       return;
     }
 
-    const transaction = await TransactionModel.findOne({
-      _id: id,
-      walletId: wallet._id,
-    }).select('type amount balanceBefore balanceAfter description createdAt');
-
+    const transaction = await TransactionRepo.findByIdAndWalletId(id, wallet.id);
     if (!transaction) {
       res.status(404).json({ message: 'Transaction not found' });
       return;

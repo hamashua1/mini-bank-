@@ -8,7 +8,7 @@ import {
 import type { AuthenticatorTransportFuture } from '@simplewebauthn/server';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
-import { UserModel } from '../models/user.model';
+import { UserRepo } from '../repositories/registry';
 import { AuthRequest } from '../middleware/auth';
 import { getOrCreateTenantDashboard, generatePapermapToken } from '../services/papermap.service';
 
@@ -23,7 +23,7 @@ const pendingChallenges = new Map<string, { expiresAt: number }>();
 // POST /api/auth/webauthn/register/options  (authenticated)
 export const registerOptions = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const user = await UserModel.findById(req.userId);
+    const user = await UserRepo.findById(req.userId!);
     if (!user) {
       res.status(404).json({ message: 'User not found' });
       return;
@@ -45,9 +45,7 @@ export const registerOptions = async (req: AuthRequest, res: Response): Promise<
       },
     });
 
-    user.currentChallenge = options.challenge;
-    user.currentChallengeExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
-    await user.save();
+    await UserRepo.updateChallenge(user.id, options.challenge, new Date(Date.now() + 5 * 60 * 1000));
 
     res.status(200).json(options);
   } catch {
@@ -58,7 +56,7 @@ export const registerOptions = async (req: AuthRequest, res: Response): Promise<
 // POST /api/auth/webauthn/register/verify  (authenticated)
 export const registerVerify = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const user = await UserModel.findById(req.userId);
+    const user = await UserRepo.findById(req.userId!);
     if (!user) {
       res.status(404).json({ message: 'User not found' });
       return;
@@ -70,9 +68,7 @@ export const registerVerify = async (req: AuthRequest, res: Response): Promise<v
     }
 
     if (!user.currentChallengeExpiresAt || user.currentChallengeExpiresAt < new Date()) {
-      user.currentChallenge = null;
-      user.currentChallengeExpiresAt = null;
-      await user.save();
+      await UserRepo.updateChallenge(user.id, null, null);
       res.status(400).json({ message: 'Challenge expired. Request registration options again.' });
       return;
     }
@@ -97,16 +93,14 @@ export const registerVerify = async (req: AuthRequest, res: Response): Promise<v
 
     const { credential } = verification.registrationInfo;
 
-    user.passkeys.push({
+    await UserRepo.addPasskey(user.id, {
       credentialID: credential.id,
       credentialPublicKey: Buffer.from(credential.publicKey),
       counter: credential.counter,
       transports: (req.body.response?.transports as string[]) ?? [],
     });
 
-    user.currentChallenge = null;
-    user.currentChallengeExpiresAt = null;
-    await user.save();
+    await UserRepo.updateChallenge(user.id, null, null);
 
     res.status(200).json({ message: 'Fingerprint registered successfully' });
   } catch {
@@ -141,7 +135,7 @@ export const loginVerify = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    const user = await UserModel.findOne({ 'passkeys.credentialID': credential.id });
+    const user = await UserRepo.findByCredentialID(credential.id);
     if (!user) {
       res.status(400).json({ message: 'Fingerprint not recognised' });
       return;
@@ -191,27 +185,27 @@ export const loginVerify = async (req: Request, res: Response): Promise<void> =>
       return;
     }
 
-    passkey.counter = verification.authenticationInfo.newCounter;
+    await UserRepo.updatePasskeyCounter(user.id, passkey.credentialID, verification.authenticationInfo.newCounter);
 
     const accessToken = jwt.sign(
-      { userId: user._id },
+      { userId: user.id },
       process.env.JWT_SECRET as string,
       { expiresIn: (process.env.JWT_EXPIRES_IN || '1h') as any }
     );
 
     const refreshToken = jwt.sign(
-      { userId: user._id },
+      { userId: user.id },
       process.env.REFRESH_TOKEN_SECRET as string,
       { expiresIn: (process.env.REFRESH_TOKEN_EXPIRES_IN || '7d') as any }
     );
 
-    user.refreshToken = await bcrypt.hash(refreshToken, SALT_ROUNDS);
-    await user.save();
+    const hashedRefresh = await bcrypt.hash(refreshToken, SALT_ROUNDS);
+    await UserRepo.updateRefreshToken(user.id, hashedRefresh);
 
     let papermapToken: string | null = null;
     try {
-      const dashboardId = await getOrCreateTenantDashboard(user._id, user.email);
-      papermapToken = generatePapermapToken(dashboardId, user._id.toString());
+      const dashboardId = await getOrCreateTenantDashboard(user.id, user.email);
+      papermapToken = generatePapermapToken(dashboardId, user.id);
     } catch {
       // Non-fatal
     }
