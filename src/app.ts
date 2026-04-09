@@ -1,20 +1,35 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
-import connectDB from './db/connect';
+import { getDbType, isSqlDb } from './types/db';
+import { initRepositories } from './repositories/registry';
 import authRoutes from './routes/auth.routes';
 import walletRoutes from './routes/wallet.routes';
 import transactionRoutes from './routes/transaction.routes';
 
-dotenv.config();
+const dbType = getDbType();
 
-const REQUIRED_ENV = ['JWT_SECRET', 'REFRESH_TOKEN_SECRET', 'MONGO_URI', 'PAPERMAP_API_KEY_ID', 'PAPERMAP_SECRET_KEY', 'PAPERMAP_WORKSPACE_ID'];
-for (const v of REQUIRED_ENV) {
+const ALWAYS_REQUIRED = ['JWT_SECRET', 'REFRESH_TOKEN_SECRET'];
+
+const DB_REQUIRED = isSqlDb() ? ['DATABASE_URL'] : ['MONGO_URI'];
+
+const PAPERMAP_REQUIRED =
+  dbType === 'postgres'
+    ? ['PAPERMAP_API_KEY_ID_POSTGRES', 'PAPERMAP_SECRET_KEY_POSTGRES', 'PAPERMAP_WORKSPACE_ID_POSTGRES']
+    : dbType === 'mysql'
+    ? ['PAPERMAP_API_KEY_ID_SQL', 'PAPERMAP_SECRET_KEY_SQL', 'PAPERMAP_WORKSPACE_ID_SQL']
+    : ['PAPERMAP_API_KEY_ID', 'PAPERMAP_SECRET_KEY', 'PAPERMAP_WORKSPACE_ID'];
+
+for (const v of [...ALWAYS_REQUIRED, ...DB_REQUIRED, ...PAPERMAP_REQUIRED]) {
   if (!process.env[v]) {
     console.error(`Missing required environment variable: ${v}`);
     process.exit(1);
   }
 }
+
+initRepositories();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,12 +50,22 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
   res.status(500).json({ message: 'Something went wrong' });
 });
 
-connectDB().then(() => {
+async function startServer() {
+  if (isSqlDb()) {
+    const { connectSql } = await import('./db/prisma');
+    await connectSql();
+  } else {
+    const connectDB = (await import('./db/connect')).default;
+    await connectDB();
+  }
+
   app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`Server running on port ${PORT} [DB: ${getDbType()}]`);
   });
-}).catch((err: Error) => {
-  console.error('Failed to connect to MongoDB:', err.message);
+}
+
+startServer().catch((err: Error) => {
+  console.error('Failed to start server:', err.message);
   process.exit(1);
 });
 

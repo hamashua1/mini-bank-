@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client-postgres"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                        String           @id @default(uuid()) @db.Uuid
+  email                     String           @unique
+  passwordHash              String
+  refreshToken              String?
+  currentChallenge          String?
+  currentChallengeExpiresAt DateTime?
+  createdAt                 DateTime         @default(now())
+  passkeys                  Passkey[]
+  wallet                    Wallet?
+  tenantDashboard           TenantDashboard?
+}
+
+model Passkey {
+  id                  String   @id @default(uuid()) @db.Uuid
+  userId              String   @db.Uuid
+  credentialID        String   @unique
+  credentialPublicKey Bytes
+  counter             Int      @default(0)
+  transports          String[]
+  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Wallet {
+  id           String        @id @default(uuid()) @db.Uuid
+  userId       String        @unique @db.Uuid
+  balance      Decimal       @default(0) @db.Decimal(19, 4)
+  currency     String
+  createdAt    DateTime      @default(now())
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+}
+
+model Transaction {
+  id            String          @id @default(uuid()) @db.Uuid
+  walletId      String          @db.Uuid
+  type          TransactionType
+  amount        Decimal         @db.Decimal(19, 4)
+  balanceBefore Decimal         @db.Decimal(19, 4)
+  balanceAfter  Decimal         @db.Decimal(19, 4)
+  description   String          @db.VarChar(200)
+  createdAt     DateTime        @default(now())
+  wallet        Wallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
+}
+
+model TenantDashboard {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @unique @db.Uuid
+  workspaceId String
+  dashboardId String
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+}
+
+enum TransactionType {
+  deposit
+  withdraw
+  transfer_in
+  transfer_out
+}

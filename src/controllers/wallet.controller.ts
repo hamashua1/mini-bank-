@@ -1,10 +1,9 @@
 import { Response } from 'express';
-import mongoose from 'mongoose';
-import { WalletModel } from '../models/wallet.model';
-import { TransactionModel } from '../models/transaction.model';
+import { WalletRepo } from '../repositories/registry';
 import { AuthRequest } from '../middleware/auth';
 
 const SUPPORTED_CURRENCIES = ['USD', 'EUR', 'GBP', 'NGN'] as const;
+const MAX_DESCRIPTION_LENGTH = 200;
 
 // POST /api/wallet
 export const createWallet = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -16,16 +15,17 @@ export const createWallet = async (req: AuthRequest, res: Response): Promise<voi
   }
 
   try {
-    const existing = await WalletModel.findOne({ userId: req.userId });
+    const existing = await WalletRepo.findByUserId(req.userId!);
     if (existing) {
-      res.status(409).json({ message: 'Wallet already exists', wallet: { walletId: existing._id, balance: existing.balance, currency: existing.currency } });
+      res.status(409).json({ message: 'Wallet already exists', wallet: { walletId: existing.id, balance: existing.balance, currency: existing.currency } });
       return;
     }
 
-    const wallet = await WalletModel.create({ userId: req.userId, balance: 0, currency: currency.toUpperCase() });
-    res.status(201).json({ message: 'Wallet created', wallet: { walletId: wallet._id, balance: wallet.balance, currency: wallet.currency } });
+    const wallet = await WalletRepo.create({ userId: req.userId!, balance: 0, currency: currency.toUpperCase() });
+    res.status(201).json({ message: 'Wallet created', wallet: { walletId: wallet.id, balance: wallet.balance, currency: wallet.currency } });
   } catch (err: any) {
-    if (err.code === 11000) {
+    // Unique constraint violation (duplicate wallet)
+    if (err?.code === 11000 || err?.code === 'P2002') {
       res.status(409).json({ message: 'Wallet already exists' });
     } else {
       res.status(500).json({ message: 'Failed to create wallet' });
@@ -36,18 +36,16 @@ export const createWallet = async (req: AuthRequest, res: Response): Promise<voi
 // GET /api/wallet
 export const getWallet = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const wallet = await WalletModel.findOne({ userId: req.userId });
+    const wallet = await WalletRepo.findByUserId(req.userId!);
     if (!wallet) {
       res.status(404).json({ message: 'Wallet not found. Create one at POST /api/wallet' });
       return;
     }
-    res.status(200).json({ walletId: wallet._id, balance: wallet.balance, currency: wallet.currency, createdAt: wallet.createdAt });
+    res.status(200).json({ walletId: wallet.id, balance: wallet.balance, currency: wallet.currency, createdAt: wallet.createdAt });
   } catch {
     res.status(500).json({ message: 'Failed to fetch wallet' });
   }
 };
-
-const MAX_DESCRIPTION_LENGTH = 200;
 
 // POST /api/wallet/deposit
 export const deposit = async (req: AuthRequest, res: Response): Promise<void> => {
@@ -66,38 +64,17 @@ export const deposit = async (req: AuthRequest, res: Response): Promise<void> =>
     return;
   }
 
-  const session = await mongoose.startSession();
-
   try {
-    let balanceAfter: number;
-    let transaction: any;
-
-    await session.withTransaction(async () => {
-      const wallet = await WalletModel.findOne({ userId: req.userId }).session(session);
-      if (!wallet) throw new Error('WALLET_NOT_FOUND');
-
-      const balanceBefore = wallet.balance;
-      balanceAfter = balanceBefore + amount;
-
-      wallet.balance = balanceAfter;
-      await wallet.save({ session });
-
-      [transaction] = await TransactionModel.create(
-        [{ walletId: wallet._id, type: 'deposit', amount, balanceBefore, balanceAfter, description: description.trim() }],
-        { session, ordered: true }
-      );
+    const { wallet, transaction } = await WalletRepo.deposit({
+      userId: req.userId!,
+      amount,
+      description: description.trim(),
     });
-
-    res.status(200).json({ message: 'Deposit successful', balance: balanceAfter!, transaction });
+    res.status(200).json({ message: 'Deposit successful', balance: wallet.balance, transaction });
   } catch (err) {
-    const message = (err as Error).message;
-    if (message === 'WALLET_NOT_FOUND') {
-      res.status(404).json({ message: 'Wallet not found' });
-    } else {
-      res.status(500).json({ message: 'Deposit failed' });
-    }
-  } finally {
-    session.endSession();
+    const msg = (err as Error).message;
+    if (msg === 'WALLET_NOT_FOUND') res.status(404).json({ message: 'Wallet not found' });
+    else res.status(500).json({ message: 'Deposit failed' });
   }
 };
 
@@ -118,41 +95,18 @@ export const withdraw = async (req: AuthRequest, res: Response): Promise<void> =
     return;
   }
 
-  const session = await mongoose.startSession();
-
   try {
-    let balanceAfter: number;
-    let transaction: any;
-
-    await session.withTransaction(async () => {
-      const wallet = await WalletModel.findOne({ userId: req.userId }).session(session);
-      if (!wallet) throw new Error('WALLET_NOT_FOUND');
-      if (wallet.balance < amount) throw new Error('INSUFFICIENT_BALANCE');
-
-      const balanceBefore = wallet.balance;
-      balanceAfter = balanceBefore - amount;
-
-      wallet.balance = balanceAfter;
-      await wallet.save({ session });
-
-      [transaction] = await TransactionModel.create(
-        [{ walletId: wallet._id, type: 'withdraw', amount, balanceBefore, balanceAfter, description: description.trim() }],
-        { session, ordered: true }
-      );
+    const { wallet, transaction } = await WalletRepo.withdraw({
+      userId: req.userId!,
+      amount,
+      description: description.trim(),
     });
-
-    res.status(200).json({ message: 'Withdrawal successful', balance: balanceAfter!, transaction });
+    res.status(200).json({ message: 'Withdrawal successful', balance: wallet.balance, transaction });
   } catch (err) {
-    const message = (err as Error).message;
-    if (message === 'WALLET_NOT_FOUND') {
-      res.status(404).json({ message: 'Wallet not found' });
-    } else if (message === 'INSUFFICIENT_BALANCE') {
-      res.status(400).json({ message: 'Insufficient balance' });
-    } else {
-      res.status(500).json({ message: 'Withdrawal failed' });
-    }
-  } finally {
-    session.endSession();
+    const msg = (err as Error).message;
+    if (msg === 'WALLET_NOT_FOUND') res.status(404).json({ message: 'Wallet not found' });
+    else if (msg === 'INSUFFICIENT_BALANCE') res.status(400).json({ message: 'Insufficient balance' });
+    else res.status(500).json({ message: 'Withdrawal failed' });
   }
 };
 
@@ -177,74 +131,21 @@ export const transfer = async (req: AuthRequest, res: Response): Promise<void> =
     return;
   }
 
-  const session = await mongoose.startSession();
-
   try {
-    let senderBalanceAfter: number;
-
-    await session.withTransaction(async () => {
-      const senderWallet = await WalletModel.findOne({ userId: req.userId }).session(session);
-      if (!senderWallet) throw new Error('WALLET_NOT_FOUND');
-      if (senderWallet._id.toString() === toWalletId) throw new Error('SELF_TRANSFER');
-
-      if (!mongoose.Types.ObjectId.isValid(toWalletId)) throw new Error('RECIPIENT_NOT_FOUND');
-      const receiverWallet = await WalletModel.findById(toWalletId).session(session);
-      if (!receiverWallet) throw new Error('RECIPIENT_NOT_FOUND');
-      if (senderWallet.currency !== receiverWallet.currency) throw new Error('CURRENCY_MISMATCH');
-      if (senderWallet.balance < amount) throw new Error('INSUFFICIENT_BALANCE');
-
-      const senderBalanceBefore = senderWallet.balance;
-      senderBalanceAfter = senderBalanceBefore - amount;
-      const receiverBalanceBefore = receiverWallet.balance;
-      const receiverBalanceAfter = receiverBalanceBefore + amount;
-
-      senderWallet.balance = senderBalanceAfter;
-      receiverWallet.balance = receiverBalanceAfter;
-
-      await senderWallet.save({ session });
-      await receiverWallet.save({ session });
-
-      await TransactionModel.create(
-        [
-          {
-            walletId: senderWallet._id,
-            type: 'transfer_out',
-            amount,
-            balanceBefore: senderBalanceBefore,
-            balanceAfter: senderBalanceAfter,
-            description: description.trim(),
-          },
-          {
-            walletId: receiverWallet._id,
-            type: 'transfer_in',
-            amount,
-            balanceBefore: receiverBalanceBefore,
-            balanceAfter: receiverBalanceAfter,
-            description: description.trim(),
-          },
-        ],
-        { session, ordered: true }
-      );
+    const { balance } = await WalletRepo.transfer({
+      senderUserId: req.userId!,
+      toWalletId,
+      amount,
+      description: description.trim(),
     });
-
-    res.status(200).json({ message: 'Transfer successful', balance: senderBalanceAfter! });
+    res.status(200).json({ message: 'Transfer successful', balance });
   } catch (err) {
-    const message = (err as Error).message;
-
-    if (message === 'WALLET_NOT_FOUND') {
-      res.status(404).json({ message: 'Wallet not found' });
-    } else if (message === 'RECIPIENT_NOT_FOUND') {
-      res.status(404).json({ message: 'Recipient wallet not found' });
-    } else if (message === 'SELF_TRANSFER') {
-      res.status(400).json({ message: 'Cannot transfer to your own wallet' });
-    } else if (message === 'CURRENCY_MISMATCH') {
-      res.status(400).json({ message: 'Wallet currencies do not match' });
-    } else if (message === 'INSUFFICIENT_BALANCE') {
-      res.status(400).json({ message: 'Insufficient balance' });
-    } else {
-      res.status(500).json({ message: 'Transfer failed' });
-    }
-  } finally {
-    session.endSession();
+    const msg = (err as Error).message;
+    if (msg === 'WALLET_NOT_FOUND') res.status(404).json({ message: 'Wallet not found' });
+    else if (msg === 'RECIPIENT_NOT_FOUND') res.status(404).json({ message: 'Recipient wallet not found' });
+    else if (msg === 'SELF_TRANSFER') res.status(400).json({ message: 'Cannot transfer to your own wallet' });
+    else if (msg === 'CURRENCY_MISMATCH') res.status(400).json({ message: 'Wallet currencies do not match' });
+    else if (msg === 'INSUFFICIENT_BALANCE') res.status(400).json({ message: 'Insufficient balance' });
+    else res.status(500).json({ message: 'Transfer failed' });
   }
 };

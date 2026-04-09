@@ -1,27 +1,60 @@
 import crypto from 'crypto';
-import mongoose from 'mongoose';
-import { TenantDashboardModel } from '../models/tenantDashboard.model';
+import { TenantDashboardRepo } from '../repositories/registry';
+import { getDbType } from '../types/db';
 
-function createSignature(workspaceId: string, validUntil: string): string {
+// Returns the correct Papermap credentials based on which DB is active.
+// mongo  → PAPERMAP_API_KEY_ID / PAPERMAP_SECRET_KEY / PAPERMAP_WORKSPACE_ID
+// postgres → PAPERMAP_API_KEY_ID_POSTGRES / ...
+// mysql  → PAPERMAP_API_KEY_ID_SQL / ...
+function getPapermapCreds(): { apiKeyId: string; secretKey: string; workspaceId: string } {
+  const db = getDbType();
+
+  if (db === 'postgres') {
+    return {
+      apiKeyId: process.env.PAPERMAP_API_KEY_ID_POSTGRES as string,
+      secretKey: process.env.PAPERMAP_SECRET_KEY_POSTGRES as string,
+      workspaceId: process.env.PAPERMAP_WORKSPACE_ID_POSTGRES as string,
+    };
+  }
+
+  if (db === 'mysql') {
+    return {
+      apiKeyId: process.env.PAPERMAP_API_KEY_ID_SQL as string,
+      secretKey: process.env.PAPERMAP_SECRET_KEY_SQL as string,
+      workspaceId: process.env.PAPERMAP_WORKSPACE_ID_SQL as string,
+    };
+  }
+
+  // Default: mongo
+  return {
+    apiKeyId: process.env.PAPERMAP_API_KEY_ID as string,
+    secretKey: process.env.PAPERMAP_SECRET_KEY as string,
+    workspaceId: process.env.PAPERMAP_WORKSPACE_ID as string,
+  };
+}
+
+function createSignature(workspaceId: string, validUntil: string, secretKey: string): string {
   const payload = `${workspaceId}${validUntil}`;
   return crypto
-    .createHmac('sha256', process.env.PAPERMAP_SECRET_KEY as string)
+    .createHmac('sha256', secretKey)
     .update(payload)
     .digest('hex');
 }
 
 function getAuthHeaders(): Record<string, string> {
+  const { apiKeyId, secretKey, workspaceId } = getPapermapCreds();
   const validUntil = String(Math.floor(Date.now() / 1000) + 300);
   return {
-    'X-API-Key-ID': process.env.PAPERMAP_API_KEY_ID as string,
-    'X-Workspace-ID': process.env.PAPERMAP_WORKSPACE_ID as string,
+    'X-API-Key-ID': apiKeyId,
+    'X-Workspace-ID': workspaceId,
     'X-Valid-Until': validUntil,
-    'X-Signature': createSignature(process.env.PAPERMAP_WORKSPACE_ID as string, validUntil),
+    'X-Signature': createSignature(workspaceId, validUntil, secretKey),
     'Content-Type': 'application/json',
   };
 }
 
 async function createDashboardOnPapermap(tenantId: string, userEmail: string): Promise<string> {
+  const { workspaceId } = getPapermapCreds();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
 
@@ -32,7 +65,7 @@ async function createDashboardOnPapermap(tenantId: string, userEmail: string): P
       headers: getAuthHeaders(),
       signal: controller.signal,
       body: JSON.stringify({
-        workspace_id: process.env.PAPERMAP_WORKSPACE_ID,
+        workspace_id: workspaceId,
         tenant_id: tenantId,
         title: `Mini Bank - ${userEmail}`,
       }),
@@ -50,37 +83,29 @@ async function createDashboardOnPapermap(tenantId: string, userEmail: string): P
   return json.data.dashboard_id;
 }
 
-// Looks up existing tenant→dashboard mapping, or creates one on Papermap and stores it.
-// tenantId is the User._id (ObjectId) — stored as a foreign key reference to User.
-export async function getOrCreateTenantDashboard(
-  userId: mongoose.Types.ObjectId,
-  userEmail: string
-): Promise<string> {
-  const existing = await TenantDashboardModel.findOne({ tenantId: userId });
+export async function getOrCreateTenantDashboard(userId: string, userEmail: string): Promise<string> {
+  const existing = await TenantDashboardRepo.findByTenantId(userId);
   if (existing) return existing.dashboardId;
 
-  const dashboardId = await createDashboardOnPapermap(userId.toString(), userEmail);
+  const dashboardId = await createDashboardOnPapermap(userId, userEmail);
+  const { workspaceId } = getPapermapCreds();
 
-  await TenantDashboardModel.create({
+  await TenantDashboardRepo.create({
     tenantId: userId,
-    workspaceId: process.env.PAPERMAP_WORKSPACE_ID,
+    workspaceId,
     dashboardId,
   });
 
   return dashboardId;
 }
 
-// Generates the base64-encoded token passed to PapermapConfigProvider.
-// tenant_id scopes all AI queries to this user's data only.
 export function generatePapermapToken(dashboardId: string, userId: string): string {
+  const { apiKeyId, secretKey, workspaceId } = getPapermapCreds();
   const validUntil = Math.floor(Date.now() / 1000) + 3600;
-  const signature = createSignature(
-    process.env.PAPERMAP_WORKSPACE_ID as string,
-    String(validUntil)
-  );
+  const signature = createSignature(workspaceId, String(validUntil), secretKey);
   const payload = {
-    api_key_id: process.env.PAPERMAP_API_KEY_ID,
-    workspace_id: process.env.PAPERMAP_WORKSPACE_ID,
+    api_key_id: apiKeyId,
+    workspace_id: workspaceId,
     tenant_id: userId,
     dashboard_id: dashboardId,
     valid_until: validUntil,
