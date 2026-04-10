@@ -15,7 +15,7 @@
     "tunnel:postgres": "ts-node src/tunnel-db.ts postgres",
     "tunnel:mysql": "ts-node src/tunnel-db.ts mysql",
     "db:migrate:postgres": "prisma migrate dev --schema=prisma/schema.postgres.prisma",
-    "db:migrate:mysql": "prisma migrate dev --schema=prisma/schema.mysql.prisma",
+    "db:migrate:mysql": "prisma db push --schema=prisma/schema.mysql.prisma",
     "db:studio:postgres": "prisma studio --schema=prisma/schema.postgres.prisma",
     "db:studio:mysql": "prisma studio --schema=prisma/schema.mysql.prisma",
     "db:generate": "prisma generate --schema=prisma/schema.postgres.prisma && prisma generate --schema=prisma/schema.mysql.prisma",
