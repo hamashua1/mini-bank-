@@ -5,10 +5,15 @@
   "main": "dist/app.js",
   "scripts": {
     "dev": "nodemon --exec ts-node src/app.ts",
+    "dev:pg": "cross-env DB_TYPE=postgres nodemon --exec ts-node src/app.ts",
+    "dev:mysql": "cross-env DB_TYPE=mysql nodemon --exec ts-node src/app.ts",
+    "dev:mongo": "cross-env DB_TYPE=mongo nodemon --exec ts-node src/app.ts",
     "build": "tsc",
     "start": "node dist/app.js",
     "tunnel": "ts-node src/tunnel.ts",
     "tunnel:db": "ts-node src/tunnel-db.ts",
+    "tunnel:postgres": "ts-node src/tunnel-db.ts postgres",
+    "tunnel:mysql": "ts-node src/tunnel-db.ts mysql",
     "db:migrate:postgres": "prisma migrate dev --schema=prisma/schema.postgres.prisma",
     "db:migrate:mysql": "prisma migrate dev --schema=prisma/schema.mysql.prisma",
     "db:studio:postgres": "prisma studio --schema=prisma/schema.postgres.prisma",
@@ -46,6 +51,7 @@
     "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "cross-env": "^10.1.0",
     "@types/bcrypt": "^6.0.0",
     "@types/cors": "^2.8.19",
     "@types/dotenv": "^6.1.1",

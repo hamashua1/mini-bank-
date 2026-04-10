@@ -11,6 +11,31 @@ import transactionRoutes from './routes/transaction.routes';
 
 const dbType = getDbType();
 
+function applySqlDatabaseUrlFromDbType(): void {
+  if (dbType === 'postgres') {
+    const pgUrl = process.env.DATABASE_URL_POSTGRES;
+    if (!pgUrl) {
+      console.error('Missing required environment variable: DATABASE_URL_POSTGRES');
+      process.exit(1);
+    }
+    process.env.DATABASE_URL = pgUrl;
+    return;
+  }
+
+  if (dbType === 'mysql') {
+    const mysqlUrl = process.env.DATABASE_URL_MYSQL;
+    if (!mysqlUrl) {
+      console.error('Missing required environment variable: DATABASE_URL_MYSQL');
+      process.exit(1);
+    }
+    process.env.DATABASE_URL = mysqlUrl;
+  }
+}
+
+if (isSqlDb()) {
+  applySqlDatabaseUrlFromDbType();
+}
+
 const ALWAYS_REQUIRED = ['JWT_SECRET', 'REFRESH_TOKEN_SECRET'];
 
 const DB_REQUIRED = isSqlDb() ? ['DATABASE_URL'] : ['MONGO_URI'];

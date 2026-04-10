@@ -114,6 +114,23 @@ CLIENT_ORIGIN=http://localhost:3000
 npm run dev
 ```
 
+### Database switching (secure)
+
+Set these env vars in `.env`:
+
+```env
+DATABASE_URL_POSTGRES=postgresql://...
+DATABASE_URL_MYSQL=mysql://...
+```
+
+Then run by backend type:
+
+```bash
+npm run dev:pg
+npm run dev:mysql
+npm run dev:mongo
+```
+
 ### 4. Build for production
 ```bash
 npm run build
