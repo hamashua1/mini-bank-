@@ -4,3 +4,4 @@ dist/
 .env.example
 .password
 pg-backend.log
+mini-bank-pg-dev.log
