@@ -5,3 +5,4 @@ dist/
 .password
 pg-backend.log
 mini-bank-pg-dev.log
+mini-bank-dev.log
