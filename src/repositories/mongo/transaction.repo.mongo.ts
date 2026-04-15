@@ -23,7 +23,7 @@ export const MongoTransactionRepo: ITransactionRepo = {
 
     const [docs, total] = await Promise.all([
       TransactionModel.find(query)
-        .select('type amount balanceBefore balanceAfter description createdAt')
+        .select('walletId type amount balanceBefore balanceAfter description createdAt')
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit),
@@ -36,7 +36,7 @@ export const MongoTransactionRepo: ITransactionRepo = {
   async findByIdAndWalletId(id, walletId) {
     if (!mongoose.Types.ObjectId.isValid(id)) return null;
     const doc = await TransactionModel.findOne({ _id: id, walletId })
-      .select('type amount balanceBefore balanceAfter description createdAt');
+      .select('walletId type amount balanceBefore balanceAfter description createdAt');
     return doc ? toDTO(doc) : null;
   },
 };

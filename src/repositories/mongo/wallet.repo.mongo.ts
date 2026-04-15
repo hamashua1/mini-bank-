@@ -5,7 +5,7 @@ import { IWalletRepo, WalletDTO, TransactionDTO } from '../interfaces/wallet.rep
 
 function walletToDTO(doc: any): WalletDTO {
   return {
-    id: doc._id.toString(),
+    id: (doc.walletId ?? doc._id).toString(),
     userId: doc.userId.toString(),
     balance: doc.balance,
     currency: doc.currency,

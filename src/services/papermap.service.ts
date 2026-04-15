@@ -84,13 +84,13 @@ async function createDashboardOnPapermap(tenantId: string, userEmail: string): P
 }
 
 export async function getOrCreateTenantDashboard(userId: string, userEmail: string): Promise<string> {
-  const existing = await TenantDashboardRepo.findByTenantId(userId);
-  if (existing) return existing.dashboardId;
-
-  const dashboardId = await createDashboardOnPapermap(userId, userEmail);
   const { workspaceId } = getPapermapCreds();
+  const existing = await TenantDashboardRepo.findByTenantId(userId);
+  if (existing && existing.workspaceId === workspaceId) return existing.dashboardId;
 
-  await TenantDashboardRepo.create({
+  const dashboardId = process.env.PAPERMAP_DASHBOARD_ID || await createDashboardOnPapermap(userId, userEmail);
+
+  await TenantDashboardRepo.upsertByTenantId({
     tenantId: userId,
     workspaceId,
     dashboardId,
@@ -101,7 +101,7 @@ export async function getOrCreateTenantDashboard(userId: string, userEmail: stri
 
 export function generatePapermapToken(dashboardId: string, userId: string): string {
   const { apiKeyId, secretKey, workspaceId } = getPapermapCreds();
-  const validUntil = Math.floor(Date.now() / 1000) + 3600;
+  const validUntil = Math.floor(Date.now() / 1000) + 86400; // 24 hours
   const signature = createSignature(workspaceId, String(validUntil), secretKey);
   const payload = {
     api_key_id: apiKeyId,

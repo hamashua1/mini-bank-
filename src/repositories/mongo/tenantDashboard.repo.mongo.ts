@@ -21,4 +21,13 @@ export const MongoTenantDashboardRepo: ITenantDashboardRepo = {
     const doc = await TenantDashboardModel.create(data);
     return toDTO(doc);
   },
+
+  async upsertByTenantId(data) {
+    const doc = await TenantDashboardModel.findOneAndUpdate(
+      { tenantId: data.tenantId },
+      { $set: { workspaceId: data.workspaceId, dashboardId: data.dashboardId } },
+      { new: true, upsert: true, setDefaultsOnInsert: true }
+    );
+    return toDTO(doc);
+  },
 };

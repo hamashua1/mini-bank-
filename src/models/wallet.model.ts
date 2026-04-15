@@ -1,7 +1,8 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
 export interface IWallet extends Document {
-  userId: mongoose.Types.ObjectId;
+  userId: string;
+  walletId: string;
   balance: number;
   currency: string;
   createdAt: Date;
@@ -9,7 +10,16 @@ export interface IWallet extends Document {
 
 const walletSchema = new Schema<IWallet>(
   {
-    userId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
+    userId: { type: String, ref: 'User', required: true },
+    walletId: {
+      type: String,
+      required: true,
+      unique: true,
+      index: true,
+      default: function defaultWalletId(this: { _id: mongoose.Types.ObjectId }) {
+        return this._id.toString();
+      },
+    },
     balance: { type: Number, required: true, default: 0 },
     currency: { type: String, required: true, uppercase: true, trim: true },
   },
