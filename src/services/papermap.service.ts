@@ -88,7 +88,7 @@ export async function getOrCreateTenantDashboard(userId: string, userEmail: stri
   const existing = await TenantDashboardRepo.findByTenantId(userId);
   if (existing && existing.workspaceId === workspaceId) return existing.dashboardId;
 
-  const dashboardId = process.env.PAPERMAP_DASHBOARD_ID || await createDashboardOnPapermap(userId, userEmail);
+  const dashboardId = await createDashboardOnPapermap(userId, userEmail);
 
   await TenantDashboardRepo.upsertByTenantId({
     tenantId: userId,
