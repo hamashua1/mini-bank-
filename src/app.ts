@@ -36,9 +36,9 @@ if (isSqlDb()) {
   applySqlDatabaseUrlFromDbType();
 }
 
-const ALWAYS_REQUIRED = ['JWT_SECRET', 'REFRESH_TOKEN_SECRET'];
+const ALWAYS_REQUIRED = ['JWT_SECRET', 'REFRESH_TOKEN_SECRET', 'MONGO_URI'];
 
-const DB_REQUIRED = isSqlDb() ? ['DATABASE_URL'] : ['MONGO_URI'];
+const DB_REQUIRED = isSqlDb() ? ['DATABASE_URL'] : [];
 
 const PAPERMAP_REQUIRED =
   dbType === 'postgres'
@@ -76,12 +76,13 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
 });
 
 async function startServer() {
+  // MongoDB always connects — it is the permanent auth DB regardless of DB_TYPE
+  const connectDB = (await import('./db/connect')).default;
+  await connectDB();
+
   if (isSqlDb()) {
     const { connectSql } = await import('./db/prisma');
     await connectSql();
-  } else {
-    const connectDB = (await import('./db/connect')).default;
-    await connectDB();
   }
 
   app.listen(PORT, () => {

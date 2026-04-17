@@ -85,12 +85,12 @@ async function createDashboardOnPapermap(tenantId: string, userEmail: string): P
 
 export async function getOrCreateTenantDashboard(userId: string, userEmail: string): Promise<string> {
   const { workspaceId } = getPapermapCreds();
-  const existing = await TenantDashboardRepo.findByTenantId(userId);
-  if (existing && existing.workspaceId === workspaceId) return existing.dashboardId;
+  const existing = await TenantDashboardRepo.findByTenantAndWorkspace(userId, workspaceId);
+  if (existing) return existing.dashboardId;
 
   const dashboardId = await createDashboardOnPapermap(userId, userEmail);
 
-  await TenantDashboardRepo.upsertByTenantId({
+  await TenantDashboardRepo.upsertByTenantAndWorkspace({
     tenantId: userId,
     workspaceId,
     dashboardId,

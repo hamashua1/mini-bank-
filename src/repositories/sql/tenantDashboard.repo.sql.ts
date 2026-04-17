@@ -12,9 +12,9 @@ function toDTO(d: any): TenantDashboardDTO {
 }
 
 export const SqlTenantDashboardRepo: ITenantDashboardRepo = {
-  async findByTenantId(tenantId) {
+  async findByTenantAndWorkspace(tenantId, workspaceId) {
     const prisma = getPrismaClient();
-    const doc = await prisma.tenantDashboard.findUnique({ where: { tenantId } });
+    const doc = await prisma.tenantDashboard.findUnique({ where: { tenantId_workspaceId: { tenantId, workspaceId } } });
     return doc ? toDTO(doc) : null;
   },
 
@@ -24,14 +24,11 @@ export const SqlTenantDashboardRepo: ITenantDashboardRepo = {
     return toDTO(doc);
   },
 
-  async upsertByTenantId(data) {
+  async upsertByTenantAndWorkspace(data) {
     const prisma = getPrismaClient();
     const doc = await prisma.tenantDashboard.upsert({
-      where: { tenantId: data.tenantId },
-      update: {
-        workspaceId: data.workspaceId,
-        dashboardId: data.dashboardId,
-      },
+      where: { tenantId_workspaceId: { tenantId: data.tenantId, workspaceId: data.workspaceId } },
+      update: { dashboardId: data.dashboardId },
       create: data,
     });
     return toDTO(doc);

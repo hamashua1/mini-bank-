@@ -12,16 +12,17 @@ export let TenantDashboardRepo: ITenantDashboardRepo;
 export function initRepositories(): void {
   const dbType = getDbType();
 
+  // UserRepo and TenantDashboardRepo are always MongoDB — MongoDB is the permanent auth DB.
+  // Switching DB_TYPE never affects who can log in.
+  UserRepo = require('./mongo/user.repo.mongo').MongoUserRepo;
+  TenantDashboardRepo = require('./mongo/tenantDashboard.repo.mongo').MongoTenantDashboardRepo;
+
   if (dbType === 'postgres' || dbType === 'mysql') {
-    UserRepo = require('./sql/user.repo.sql').SqlUserRepo;
     WalletRepo = require('./sql/wallet.repo.sql').SqlWalletRepo;
     TransactionRepo = require('./sql/transaction.repo.sql').SqlTransactionRepo;
-    TenantDashboardRepo = require('./sql/tenantDashboard.repo.sql').SqlTenantDashboardRepo;
   } else {
-    UserRepo = require('./mongo/user.repo.mongo').MongoUserRepo;
     WalletRepo = require('./mongo/wallet.repo.mongo').MongoWalletRepo;
     TransactionRepo = require('./mongo/transaction.repo.mongo').MongoTransactionRepo;
-    TenantDashboardRepo = require('./mongo/tenantDashboard.repo.mongo').MongoTenantDashboardRepo;
   }
 
   console.log(`Repositories initialised [DB: ${dbType}]`);

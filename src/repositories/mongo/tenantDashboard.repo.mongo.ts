@@ -12,8 +12,8 @@ function toDTO(doc: any): TenantDashboardDTO {
 }
 
 export const MongoTenantDashboardRepo: ITenantDashboardRepo = {
-  async findByTenantId(tenantId) {
-    const doc = await TenantDashboardModel.findOne({ tenantId });
+  async findByTenantAndWorkspace(tenantId, workspaceId) {
+    const doc = await TenantDashboardModel.findOne({ tenantId, workspaceId });
     return doc ? toDTO(doc) : null;
   },
 
@@ -22,10 +22,10 @@ export const MongoTenantDashboardRepo: ITenantDashboardRepo = {
     return toDTO(doc);
   },
 
-  async upsertByTenantId(data) {
+  async upsertByTenantAndWorkspace(data) {
     const doc = await TenantDashboardModel.findOneAndUpdate(
-      { tenantId: data.tenantId },
-      { $set: { workspaceId: data.workspaceId, dashboardId: data.dashboardId } },
+      { tenantId: data.tenantId, workspaceId: data.workspaceId },
+      { $set: { dashboardId: data.dashboardId } },
       { new: true, upsert: true, setDefaultsOnInsert: true }
     );
     return toDTO(doc);

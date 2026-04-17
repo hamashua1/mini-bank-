@@ -8,36 +8,15 @@ datasource db {
   url      = env("DATABASE_URL_POSTGRES")
 }
 
-model User {
-  id                        String           @id @default(uuid()) @db.Uuid
-  email                     String           @unique
-  passwordHash              String
-  refreshToken              String?
-  currentChallenge          String?
-  currentChallengeExpiresAt DateTime?
-  createdAt                 DateTime         @default(now())
-  passkeys                  Passkey[]
-  wallet                    Wallet?
-  tenantDashboard           TenantDashboard?
-}
-
-model Passkey {
-  id                  String   @id @default(uuid()) @db.Uuid
-  userId              String   @db.Uuid
-  credentialID        String   @unique
-  credentialPublicKey Bytes
-  counter             Int      @default(0)
-  transports          String[]
-  user                User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
+// User and auth models are intentionally absent — auth is handled by MongoDB exclusively.
+// userId on Wallet is a plain string reference to the MongoDB user _id.
 
 model Wallet {
   id           String        @id @default(uuid()) @db.Uuid
-  userId       String        @unique @db.Uuid
+  userId       String        @unique @db.VarChar(36)
   balance      Decimal       @default(0) @db.Decimal(19, 4)
   currency     String
   createdAt    DateTime      @default(now())
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions Transaction[]
 }
 
@@ -51,15 +30,6 @@ model Transaction {
   description   String          @db.VarChar(200)
   createdAt     DateTime        @default(now())
   wallet        Wallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
-}
-
-model TenantDashboard {
-  id          String   @id @default(uuid()) @db.Uuid
-  tenantId    String   @unique @db.Uuid
-  workspaceId String
-  dashboardId String
-  createdAt   DateTime @default(now())
-  user        User     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 enum TransactionType {

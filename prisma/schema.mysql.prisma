@@ -8,36 +8,15 @@ datasource db {
   url      = env("DATABASE_URL_MYSQL")
 }
 
-model User {
-  id                        String           @id @default(uuid()) @db.Char(36)
-  email                     String           @unique @db.VarChar(255)
-  passwordHash              String           @db.VarChar(255)
-  refreshToken              String?          @db.VarChar(255)
-  currentChallenge          String?          @db.VarChar(255)
-  currentChallengeExpiresAt DateTime?
-  createdAt                 DateTime         @default(now())
-  passkeys                  Passkey[]
-  wallet                    Wallet?
-  tenantDashboard           TenantDashboard?
-}
-
-model Passkey {
-  id                  String @id @default(uuid()) @db.Char(36)
-  userId              String @db.Char(36)
-  credentialID        String @unique @db.VarChar(255)
-  credentialPublicKey Bytes
-  counter             Int    @default(0)
-  transports          Json
-  user                User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-}
+// User and auth models are intentionally absent — auth is handled by MongoDB exclusively.
+// userId on Wallet is a plain string reference to the MongoDB user _id.
 
 model Wallet {
   id           String        @id @default(uuid()) @db.Char(36)
-  userId       String        @unique @db.Char(36)
+  userId       String        @unique @db.VarChar(36)
   balance      Decimal       @default(0) @db.Decimal(19, 4)
   currency     String        @db.VarChar(3)
   createdAt    DateTime      @default(now())
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   transactions Transaction[]
 }
 
@@ -51,15 +30,6 @@ model Transaction {
   description   String          @db.VarChar(200)
   createdAt     DateTime        @default(now())
   wallet        Wallet          @relation(fields: [walletId], references: [id], onDelete: Cascade)
-}
-
-model TenantDashboard {
-  id          String   @id @default(uuid()) @db.Char(36)
-  tenantId    String   @unique @db.Char(36)
-  workspaceId String   @db.VarChar(255)
-  dashboardId String   @db.VarChar(255)
-  createdAt   DateTime @default(now())
-  user        User     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 }
 
 enum TransactionType {
